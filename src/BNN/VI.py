@@ -6,7 +6,7 @@ from pyro.infer.autoguide.guides import AutoDiagonalNormal
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import Adam
 from pyro.infer.predictive import Predictive
-
+import maketrain as mt
 
 # =============================
 # ニューラルネットワークモデル
@@ -72,33 +72,23 @@ class BNN(object):
 # main関数
 # =============================
 def main():
-    H_0 = 2  # 入力次元
-    H_1 = 4  # 中間層のユニット数
-    D = 1  # 出力次元
+    H_0 = 6 + 1 + 1  # 入力次元(state_dim,action_dim,bias_dim)
+    H_1 = 10  # 中間層のユニット数
+    D = 6  # 出力次元
     # 訓練データセット
-    data = torch.tensor([[-4.5, -0.22],
-                         [-4.4, -0.10],
-                         [-4.0, 0.00],
-                         [-2.9, -0.11],
-                         [-2.7, -0.33],
-                         [-1.5, -0.20],
-                         [-1.3, -0.08],
-                         [-0.8, -0.21],
-                         [0.1, -0.34],
-                         [1.5, 0.10],
-                         [2.0, 0.11],
-                         [2.1, 0.14],
-                         [2.6, 0.21],
-                         [3.5, 0.23],
-                         [3.6, 0.38]])
-    x_data = data[:, 0].reshape(-1, 1)
-    x_data = torch.cat([x_data, torch.ones_like(x_data)], dim=1)  # biasごと入力に含ませる
-    y_data = data[:, 1]
+    data_l = mt.make_train_data()
+    data = torch.tensor(data_l)
+    x_data = data[:, 0:7]
+    x_data = torch.cat([x_data, torch.ones_like(x_data[:,0]).reshape(-1,1)], dim=1)
+    # x_data = torch.cat([x_data, torch.ones_like(x_data)], dim=1)  # biasごと入力に含ませる
+    y_data = data[:, 7:]
 
     # ハイパーパラメータ
     w_sigma = torch.tensor(0.75)
     y_sigma = torch.tensor(0.09)
     # モデル
+    print(x_data.size())
+    print(y_data.size())
     bnn = BNN(H_0, H_1, D, w_sigma, y_sigma)
     # 推論
     bnn.VI(x_data, y_data)
