@@ -56,8 +56,13 @@ class BNN(object):
         # lift
         lifted_module = pyro.random_module("module", self.net, priors)
         lifted_bnn_model = lifted_module()
+        print("len(x_data):{}".format(len(x_data)))
+
         with pyro.plate("map", len(x_data)):
             prediction_mean = lifted_bnn_model(x_data).squeeze()
+            print("prediction_mean.size():{}".format(prediction_mean.size()))
+            print("self.y_sigma.size():{}".format(self.y_sigma.size()))
+            print("y_data.size():{}".format(y_data.size()))
             pyro.sample("obs", Normal(prediction_mean, self.y_sigma), obs=y_data)
             return prediction_mean
 
@@ -128,26 +133,31 @@ class BNN(object):
 def main():
     H_0 = 2  # 入力次元
     H_1 = 4  # 中間層のユニット数
-    D = 1  # 出力次元
+    D = 2  # 出力次元
     # 訓練データセット
     data = torch.tensor([[-4.5, -0.22],
-                         [-4.4, -0.10],
-                         [-4.0, 0.00],
-                         [-2.9, -0.11],
-                         [-2.7, -0.33],
-                         [-1.5, -0.20],
-                         [-1.3, -0.08],
-                         [-0.8, -0.21],
-                         [0.1, -0.34],
-                         [1.5, 0.10],
-                         [2.0, 0.11],
-                         [2.1, 0.14],
-                         [2.6, 0.21],
-                         [3.5, 0.23],
-                         [3.6, 0.38]])
+                        [-4.4, -0.10],
+                        [-4.0, 0.00],
+                        [-2.9, -0.11],
+                        [-2.7, -0.33],
+                        [-1.5, -0.20],
+                        [-1.3, -0.08],
+                        [-0.8, -0.21],
+                        [0.1, -0.34],
+                        [1.5, 0.10],
+                        [2.0, 0.11],
+                        [2.1, 0.14],
+                        [2.6, 0.21],
+                        [3.5, 0.23],
+                        [3.6, 0.38]])
     x_data = data[:, 0].reshape(-1, 1)
     x_data = torch.cat([x_data, torch.ones_like(x_data)], dim=1)  # biasごと入力に含ませる
     y_data = data[:, 1]
+    print(y_data.size())
+    y_data = y_data.reshape(-1, 1)
+    print(y_data.size())
+    y_data = torch.cat([y_data, torch.ones_like(y_data)], dim=1)
+    print(y_data.size())
 
     # ハイパーパラメータ
     w_sigma = torch.tensor(0.75)
