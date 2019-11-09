@@ -7,6 +7,7 @@ from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import Adam
 from pyro.infer.predictive import Predictive
 import maketrain as mt
+import pickle
 
 # =============================
 # ニューラルネットワークモデル
@@ -29,18 +30,14 @@ class BNN(object):
                 w2 = pyro.sample("w2", Normal(0, self.w_sigma))
 
         f = lambda x: torch.mm(torch.tanh(torch.mm(x, w1)), w2)
-        print("w1 is {}\n size of w1 is {}".format(w1, w1.size()))
-        print("w2 is {}\n size of w2 is {}".format(w2, w2.size()))
-        print("len(x_data){}".format(len(x_data)))
+        
         # 観測データの生成
-        with pyro.plate("map", len(x_data)):
-            prediction_mean = f(x_data).squeeze()
-            print("prediction_mean.size():{}".format(prediction_mean.size()))
-            print("self.y_sigma.size():{}".format(self.y_sigma.size()))
-            print("y_data.size():{}".format(y_data.size())) 
-            print("Normal(prediction_mean, self.y_sigma):{}".format(Normal(prediction_mean, self.y_sigma)))
-            pyro.sample("obs", Normal(prediction_mean, self.y_sigma), obs=y_data)
-            return prediction_mean
+        prediction_mean = f(x_data).squeeze()
+        for i in pyro.plate("map", len(x_data)):
+            print("\ri:{}/{}".format(i,len(x_data)),end="")
+            pyro.sample("obs_{}".format(i), Normal(prediction_mean[i], self.y_sigma), obs=y_data[i])
+        return prediction_mean
+
 
     def VI(self, x_data, y_data, num_samples=1000, num_iterations=30000):
         self.guide = AutoDiagonalNormal(self.model)
@@ -49,16 +46,16 @@ class BNN(object):
         svi = SVI(self.model, self.guide, optim=optim, loss=loss)
 
         # train
-        print("train!")
+        # print("train!")
         pyro.clear_param_store()
-        print("train2!")
+        # print("train2!")
         for j in range(num_iterations):
-            print("train3!")
-            print("x_data.size():{}, y_data.size():{}".format(x_data.size(), y_data.size()))
+            # print("train3!")
+            # print("x_data.size():{}, y_data.size():{}".format(x_data.size(), y_data.size()))
             loss = svi.step(x_data, y_data)
-            print("train4!")
-            if j % (num_iterations // 10) == 0:
-                print("[iteration %05d] loss: %.4f" % (j + 1, loss / len(x_data)))
+            # print("train4!")
+            # if j % (num_iterations // 10) == 0:
+            print("[iteration %05d] loss: %.4f" % (j + 1, loss / len(x_data)))
         print("sample!")
         # num_samplesだけ事後分布からサンプルを生成
         dict = {}
@@ -84,71 +81,74 @@ class BNN(object):
 # main関数
 # =============================
 def main():
+    data_size = 0
+    K = 4
     H_0 = 6 + 1 + 1  # 入力次元(state_dim,action_dim,bias_dim)
     H_1 = 10  # 中間層のユニット数
     D = 6  # 出力次元
+    
     # 訓練データセット
+    
     data_l = mt.make_train_data()
     data = torch.tensor(data_l)
-    data_old = torch.tensor([[-4.5, -0.22],
-                        [-4.4, -0.10],
-                        [-4.0, 0.00],
-                        [-2.9, -0.11],
-                        [-2.7, -0.33],
-                        [-1.5, -0.20],
-                        [-1.3, -0.08],
-                        [-0.8, -0.21],
-                        [0.1, -0.34],
-                        [1.5, 0.10],
-                        [2.0, 0.11],
-                        [2.1, 0.14],
-                        [2.6, 0.21],
-                        [3.5, 0.23],
-                        [3.6, 0.38]])
-    print("data.size():{}".format(data.size()))
-    print("data_old.size():{}".format(data_old.size()))
-    x_data = data[:, 0:7]
-    x_data = torch.cat([x_data, torch.ones_like(x_data[:,0]).reshape(-1,1)], dim=1)
-    # x_data = torch.cat([x_data, torch.ones_like(x_data)], dim=1)  # biasごと入力に含ませる
-    y_data = data[:, 7:]
+    data_size = len(data)
+    print(data_size)
+    test_n = int(data_size/K)
+    train_n = data_size - test_n
     
-    x_data_old = data_old[:,0].reshape(-1,1)
-    x_data_old = torch.cat([x_data_old, torch.ones_like(x_data_old)], dim=1)
-    y_data_old = data_old[:, 1]
-    print("x_data.size():{}".format(x_data.size()))
-    print("x_data_old.size():{}".format(x_data_old.size()))
-    print("y_data.size():{}".format(y_data.size()))
-    print("y_data_old.size():{}".format(y_data_old.size()))
-
-
+    x_train = data[:10000, 0:7]
+    x_train = torch.cat([x_train, torch.ones_like(x_train[:,0]).reshape(-1,1)], dim=1)
+    y_train = data[:10000, 7:]
+    
+    x_test = data[10000:20000, 0:7]
+    x_test = torch.cat([x_test, torch.ones_like(x_test[:,0]).reshape(-1,1)], dim=1)
+    y_test = data[10000:20000:, 7:]
+    
     # ハイパーパラメータ
     w_sigma = torch.tensor(0.75)
     y_sigma = torch.tensor(0.09)
+
     # モデル
-    print(w_sigma)
     bnn = BNN(H_0, H_1, D, w_sigma, y_sigma)
-    # 推論
-    print("suiron!")
-    bnn.VI(x_data, y_data)
+
+    # train
+    print("train!")
+    bnn.VI(x_train, y_train)
+    
+    # test
+    print("test")
+    mu_samples, y_samples = bnn.predict(x_test)
+    
+    print("save!")
+    with open("mu_samples.binaryfile","wb") as f:
+        pickle.dump(mu_samples, f)
+    with open("y_samples.binaryfile","wb") as f:
+        pickle.dump(y_samples, f)
+    with open("bnn.binaryfile", "wb") as f:
+        pickle.dump(bnn,f)
+    
+    print("everything is end")
     # 予測
-    print("prredict!")
-    x = torch.linspace(-6.0, 6.0, 1000).reshape(-1, 1)
-    x_new = torch.cat([x, torch.ones_like(x)], dim=1)  # 予測入力点
-    mu_samples, y_samples = bnn.predict(x_new)
+    # print("prredict!")
+    # x = torch.linspace(-6.0, 6.0, 1000).reshape(-1, 1)
+    # x_new = torch.cat([x, torch.ones_like(x)], dim=1)  # 予測入力点
+    # mu_samples, y_samples = bnn.predict(x_new)
 
-    # 結果の図示
-    fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
-    for sample in mu_samples:
-        ax[0].plot(x.flatten().numpy(), sample.detach().numpy(), alpha=0.05, color='g')
-    ax[0].scatter(x_data[:, 0].flatten().numpy(), y_data.numpy(), color="black")
-    ax[0].set(xlabel="$x$", ylabel="$y$", xlim=(-6.0, 6.0), ylim=(-0.6, 0.6))
+    # # 結果の図示
+    # fig, ax = plt.subplots(nrows=1, ncols=2, figsize=(12, 6))
+    # for sample in mu_samples:
+    #     ax[0].plot(x.flatten().numpy(), sample.detach().numpy(), alpha=0.05, color='g')
+    # ax[0].scatter(x_data[:, 0].flatten().numpy(), y_data.numpy(), color="black")
+    # ax[0].set(xlabel="$x$", ylabel="$y$", xlim=(-6.0, 6.0), ylim=(-0.6, 0.6))
 
-    for sample in y_samples:
-        ax[1].plot(x.flatten().numpy(), sample.detach().numpy(), alpha=0.005, color='g')
-    ax[1].scatter(x_data[:, 0].flatten().numpy(), y_data.numpy(), color="black")
-    ax[1].set(xlabel="$x$", ylabel="$y$", xlim=(-6.0, 6.0), ylim=(-0.6, 0.6))
-    plt.show()
+    # for sample in y_samples:
+    #     ax[1].plot(x.flatten().numpy(), sample.detach().numpy(), alpha=0.005, color='g')
+    # ax[1].scatter(x_data[:, 0].flatten().numpy(), y_data.numpy(), color="black")
+    # ax[1].set(xlabel="$x$", ylabel="$y$", xlim=(-6.0, 6.0), ylim=(-0.6, 0.6))
+    # plt.show()
 
 
 if __name__ == '__main__':
+    print("hello!!!!!!!!!!!")
     main()
+    print("end")

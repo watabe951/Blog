@@ -2,7 +2,7 @@ import numpy as numpy
 import pandas as pd
 import pickle
 def make_train_data():
-    f = open("transitions.binaryfile", "rb")
+    f = open("C:\\Users\\yuuya\\Documents\\git\\Blog\\src\\BNN\\transitions.binaryfile", "rb")
     data = pickle.load(f)
 
     new_list = []
