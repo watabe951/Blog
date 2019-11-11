@@ -7,7 +7,8 @@ from pyro.distributions import Normal
 from pyro.infer.autoguide.guides import AutoDelta
 from pyro.infer import SVI, Trace_ELBO
 from pyro.optim import Adam
-
+import maketrain as mt
+import pickle
 
 # =============================
 # ニューラルネットワークモデル
@@ -59,21 +60,10 @@ class BNN(object):
         # print("len(x_data):{}".format(len(x_data)))
         prediction_mean = lifted_bnn_model(x_data).squeeze()
         for i in pyro.plate("map", len(x_data)):
-            # print("prediction_mean.size():{}".format(prediction_mean.size()))
-            # print("self.y_sigma.size():{}".format(self.y_sigma.size()))
-            # print("y_data.size():{}".format(y_data.size()))
-            print("\r i:{}".format(i),end="")
-            no = Normal(prediction_mean[i], self.y_sigma)
-            pyro.sample("obs_{}".format(i), no, obs=y_data[i])
+            print("\r i:{}/{}".format(i,len(x_data)),end="")
+            pyro.sample("obs_{}".format(i), Normal(prediction_mean[i], self.y_sigma), obs=y_data[i])
         return prediction_mean 
-        # with pyro.plate("map", len(x_data)):
-        #     prediction_mean = lifted_bnn_model(x_data).squeeze()
-        #     # print("prediction_mean.size():{}".format(prediction_mean.size()))
-        #     # print("self.y_sigma.size():{}".format(self.y_sigma.size()))
-        #     # print("y_data.size():{}".format(y_data.size()))
-        #     no = Normal(prediction_mean, self.y_sigma)
-        #     pyro.sample("obs", no, obs=y_data)
-        #     return prediction_mean
+
 
     # MAP推定
     def MAPestimation(self, x_data, y_data, num_iterations=10000):
@@ -140,67 +130,56 @@ class BNN(object):
 # main関数
 # =============================
 def main():
-    H_0 = 2  # 入力次元
-    H_1 = 4  # 中間層のユニット数
-    D = 1  # 出力次元
+    data_size = 0
+    K = 4
+    H_0 = 6 + 1 + 1  # 入力次元(state_dim,action_dim,bias_dim)
+    H_1 = 10  # 中間層のユニット数
+    D = 6  # 出力次元
+    
     # 訓練データセット
-    data = torch.tensor([[-4.5, -0.22],
-                        [-4.4, -0.10],
-                        [-4.0, 0.00],
-                        [-2.9, -0.11],
-                        [-2.7, -0.33],
-                        [-1.5, -0.20],
-                        [-1.3, -0.08],
-                        [-0.8, -0.21],
-                        [0.1, -0.34],
-                        [1.5, 0.10],
-                        [2.0, 0.11],
-                        [2.1, 0.14],
-                        [2.6, 0.21],
-                        [3.5, 0.23],
-                        [3.6, 0.38]])
-    x_data = data[:, 0].reshape(-1, 1)
-    x_data = torch.cat([x_data, torch.ones_like(x_data)], dim=1)  # biasごと入力に含ませる
-    y_data = data[:, 1]
-    print(y_data.size())
-    # y_data = y_data.reshape(-1, 1)
-    print(y_data.size())
-    # y_data = torch.cat([y_data, torch.ones_like(y_data)], dim=1)
-    print(y_data.size())
-
+    
+    data_l = mt.make_train_data()
+    data = torch.tensor(data_l)
+    data_size = len(data)
+    print(data_size)
+    test_n = int(data_size/K)
+    train_n = data_size - test_n
+    
+    x_train = data[:10000, 0:7]
+    x_train = torch.cat([x_train, torch.ones_like(x_train[:,0]).reshape(-1,1)], dim=1)
+    y_train = data[:10000, 7:]
+    
+    x_test = data[10000:20000, 0:7]
+    x_test = torch.cat([x_test, torch.ones_like(x_test[:,0]).reshape(-1,1)], dim=1)
+    y_test = data[10000:20000:, 7:]
+    
     # ハイパーパラメータ
     w_sigma = torch.tensor(0.75)
     y_sigma = torch.tensor(0.09)
     # ネットワークモデル
     bnn = BNN(H_0, H_1, D, w_sigma, y_sigma)
     # 推論
-    bnn.LaplaceApproximation(x_data, y_data)
+    bnn.LaplaceApproximation(x_train, y_train)
     # 予測
     x = torch.linspace(-6.0, 6.0, 1000).reshape(-1, 1)
     x_news = torch.cat([x, torch.ones_like(x)], dim=1)  # 予測入力点
     y_means = []  # yの予測平均を格納するlist
     y_sigmas = []  # yの予測標準偏差を格納するlist
     # 各点で予測分布のパラメータを求める
-    for x_new in x_news:
-        x_new.unsqueeze_(0)
-        y_new_mu, y_new_sigma = bnn.predict(x_new)
+    for x in x_test:
+        x.unsqueeze_(0)
+        y_new_mu, y_new_sigma = bnn.predict(x)
         y_means.append(y_new_mu.item())
         y_sigmas.append(y_new_sigma.item())
-    y_means = np.array(y_means)  # ndarray化
-    y_sigmas = np.array(y_sigmas)  # ndarray化
-
+    
     # 結果の図示
-    x = x.flatten().numpy()
-    plt.scatter(x_data[:, 0].numpy(), y_data.numpy(), color="black")
-    plt.plot(x, y_means)
-    low_y = y_means - 2 * y_sigmas
-    high_y = y_means + 2 * y_sigmas
-    plt.fill_between(x, low_y, high_y, alpha=0.3)
-    plt.xlabel("$x$")
-    plt.ylabel("$y$")
-    plt.xlim(-6.0, 6.0)
-    plt.ylim(-0.6, 0.6)
-    plt.show()
+    print("save!")
+    with open("mu_samples.binaryfile","wb") as f:
+        pickle.dump(mu_samples, f)
+    with open("y_samples.binaryfile","wb") as f:
+        pickle.dump(y_samples, f)
+    with open("bnn.binaryfile", "wb") as f:
+        pickle.dump(bnn,f)
 
 
 if __name__ == '__main__':

@@ -96,13 +96,13 @@ def main():
     test_n = int(data_size/K)
     train_n = data_size - test_n
     
-    x_train = data[:10000, 0:7]
+    x_train = data[:100, 0:7]
     x_train = torch.cat([x_train, torch.ones_like(x_train[:,0]).reshape(-1,1)], dim=1)
-    y_train = data[:10000, 7:]
+    y_train = data[:100, 7:]
     
-    x_test = data[10000:20000, 0:7]
+    x_test = data[100:200, 0:7]
     x_test = torch.cat([x_test, torch.ones_like(x_test[:,0]).reshape(-1,1)], dim=1)
-    y_test = data[10000:20000:, 7:]
+    y_test = data[100:200:, 7:]
     
     # ハイパーパラメータ
     w_sigma = torch.tensor(0.75)
@@ -113,7 +113,7 @@ def main():
 
     # train
     print("train!")
-    bnn.VI(x_train, y_train)
+    bnn.VI(x_train, y_train, num_iterations=1000)
     
     # test
     print("test")
